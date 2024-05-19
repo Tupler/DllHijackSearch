@@ -90,6 +90,7 @@ var Path string
 
 func init() {
 	flag.StringVar(&Path, "p", "C:\\", "设置一个要搜索的目录,默认C盘根目录")
+	flag.Parse()
 }
 func main() {
 	err := filepath.WalkDir(Path, visit)
