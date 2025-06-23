@@ -1,14 +1,34 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
-	peparser "github.com/saferwall/pe"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+
+	peparser "github.com/saferwall/pe"
 )
+
+func isSignatureValid(filePath string) bool {
+	// PowerShell 脚本：获取签名状态
+	script := fmt.Sprintf(`(Get-AuthenticodeSignature '%s').Status -eq 'Valid'`, filePath)
+
+	cmd := exec.Command("powershell", "-Command", script)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	err := cmd.Run()
+	if err != nil {
+		return false
+	}
+
+	result := out.String()
+	return result == "True\n"
+}
 
 func CheckUnknownDll(dllname string) bool {
 	if _, err := os.Stat("c:\\windows\\" + dllname); os.IsNotExist(err) {
@@ -34,6 +54,9 @@ func CheckImport(path string) []string {
 	importCount := len(pe.Imports)
 	ImportNames := make([]string, 0)
 	for i := 0; i < importCount; i++ {
+		if ApisetFlag && strings.Contains(pe.Imports[i].Name, "api-ms-win") {
+			return []string{}
+		}
 		if !CheckUnknownDll(pe.Imports[i].Name) {
 			ImportNames = append(ImportNames, pe.Imports[i].Name)
 		}
@@ -68,6 +91,9 @@ func visit(path string, f os.DirEntry, err error) error {
 	} else {
 		//判断后缀是否是.exe
 		if path[len(path)-4:] == ".exe" {
+			if SignVaildFlag && isSignatureValid(path) == false {
+				return nil
+			}
 			Names := CheckImport(path)
 			if len(Names) != 0 {
 				fmt.Println("可劫持EXE:", path)
@@ -87,9 +113,13 @@ func check(e error) {
 }
 
 var Path string
+var ApisetFlag bool
+var SignVaildFlag bool
 
 func init() {
 	flag.StringVar(&Path, "p", "C:\\", "设置一个要搜索的目录,默认C盘根目录")
+	flag.BoolVar(&ApisetFlag, "a", true, "设置是否排除apiset的DLL(true即不显示存在api-xxxx的导入表的可劫持文件)")
+	flag.BoolVar(&SignVaildFlag, "s", true, "设置是否排除签名不正确的exe")
 	flag.Parse()
 }
 func main() {
